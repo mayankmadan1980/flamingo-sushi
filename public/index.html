@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flamingo Sushi Lagoon</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sniglet:wght@400;800&family=Nunito:wght@600;800&display=swap">
+<style>
+/* Layout: one-screen game. Score bar + timer on top, live race lanes when others are playing, lagoon stage fills the rest. Single sunset-lagoon look in both themes. */
+:root {
+  --sky-top: #ffd7a8;
+  --sky-low: #ffe9c9;
+  --water: #3fb6c8;
+  --water-deep: #1f8fa6;
+  --ink: #2b2140;
+  --card: #fffaf2;
+  --gold: #ffb72b;
+  --muted: #6d6280;
+  --display: "Sniglet", "Comic Sans MS", "Chalkboard SE", system-ui, sans-serif;
+  --body: "Nunito", system-ui, sans-serif;
+  color-scheme: light;
+}
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--sky-top);
+  color: var(--ink);
+  font-family: var(--body);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+[hidden] { display: none !important; }
+.app { height: 100%; display: flex; flex-direction: column; }
+
+.top {
+  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  padding: 8px 16px;
+  background: var(--card);
+  border-bottom: 4px solid var(--ink);
+}
+.title { font-family: var(--display); font-weight: 800; font-size: 1.3rem; margin: 0; white-space: nowrap; }
+.clock {
+  font-family: var(--display); font-weight: 800; font-size: 1.3rem; font-variant-numeric: tabular-nums;
+  background: var(--ink); color: var(--card); border-radius: 12px; padding: 2px 10px; min-width: 5.2ch; text-align: center;
+}
+.meter { flex: 1 1 200px; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.bar { flex: 1; height: 24px; border: 3px solid var(--ink); border-radius: 20px; background: #fff; overflow: hidden; }
+.fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, #e63946, #f4842b, #f7c831, #3dbb5c, #2f80d8, #8a4fd6);
+  transition: width .4s cubic-bezier(.3,1.4,.6,1);
+}
+.score { font-family: var(--display); font-weight: 800; font-size: 1.5rem; font-variant-numeric: tabular-nums; min-width: 4.6ch; text-align: right; }
+.score small { font-size: .85rem; color: var(--muted); }
+.score.hurt { animation: shake .4s; color: #c0262f; }
+@keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+.legend {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 5px 16px; background: var(--sky-low); font-size: .82rem; font-weight: 800;
+  border-bottom: 3px solid var(--ink);
+}
+.legend .dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--ink); }
+.legend .sep { margin-left: 10px; }
+.legend .rb { width: 20px; height: 20px; background: conic-gradient(#e63946, #f4842b, #f7c831, #3dbb5c, #2f80d8, #8a4fd6, #e63946); }
+.legend .gull { width: 20px; height: 20px; background: #fff; }
+.legend .mode-tag { margin-left: auto; background: var(--ink); color: var(--card); border-radius: 8px; padding: 1px 8px; }
+
+.race { display: grid; gap: 4px; padding: 6px 16px 8px; background: var(--card); border-bottom: 3px solid var(--ink); }
+.race-head { font-family: var(--display); font-size: .95rem; display: flex; align-items: center; gap: 8px; }
+.live { width: 9px; height: 9px; border-radius: 50%; background: #e63946; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+#lanes { display: grid; gap: 4px; }
+.lane { display: grid; grid-template-columns: minmax(0, 8em) 1fr 4.6em; align-items: center; gap: 8px; font-weight: 800; font-size: .85rem; }
+.lane .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane .tag { font-size: .68rem; border: 2px solid var(--ink); border-radius: 6px; padding: 0 4px; margin-left: 4px; }
+.lane .you { background: var(--ink); color: var(--card); }
+.track { position: relative; height: 14px; border-radius: 10px; background: var(--sky-low); border: 2px solid var(--ink); }
+.track .runner { position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--ink); transform: translate(-50%, -50%); transition: left .6s ease-out; }
+.track .finish { position: absolute; right: -2px; top: -5px; bottom: -5px; width: 6px; background: repeating-linear-gradient(var(--ink) 0 4px, #fff 4px 8px); border-radius: 2px; }
+.lane .pts { text-align: right; font-variant-numeric: tabular-nums; }
+.lane.idle { color: var(--muted); }
+.lane.idle .pts { font-size: .68rem; }
+
+.stage {
+  flex: 1; position: relative; overflow: hidden;
+  background:
+    radial-gradient(circle at 80% 18%, #fff3c4 0 34px, #ffe28a 35px 46px, transparent 47px),
+    linear-gradient(var(--sky-top), var(--sky-low) 38%, var(--water) 38.2%, var(--water-deep));
+}
+.ripple { position: absolute; height: 6px; border-radius: 6px; background: rgba(255,255,255,.35); }
+
+.critter { position: absolute; left: 0; top: 0; transform-origin: 50% 100%; touch-action: none; cursor: pointer; will-change: transform; }
+.flamingo { width: clamp(80px, 17vmin, 140px); aspect-ratio: 100 / 140; }
+.adult-mode .flamingo { width: clamp(64px, 13vmin, 110px); }
+.critter svg { width: 100%; height: 100%; overflow: visible; display: block; }
+.critter .walker { width: 100%; height: 100%; animation: bob .5s ease-in-out infinite; }
+.flamingo.rainbow::after {
+  content: ""; position: absolute; inset: -10%; border-radius: 50%;
+  background: radial-gradient(rgba(255,255,255,.6), transparent 65%);
+  z-index: -1; animation: glow 1s ease-in-out infinite alternate;
+}
+.critter.fed .walker { animation: hop .45s ease-out 2; }
+.gull { width: clamp(70px, 14vmin, 110px); aspect-ratio: 120 / 80; }
+.gull .walker { animation: flap .3s ease-in-out infinite; }
+.gull.caught .walker { animation: none; filter: grayscale(1); }
+@keyframes bob { 50% { transform: translateY(-4px) rotate(-2deg); } }
+@keyframes flap { 50% { transform: scaleY(.8) translateY(4px); } }
+@keyframes hop { 40% { transform: translateY(-26px) rotate(4deg); } }
+@keyframes glow { to { opacity: .4; transform: scale(1.1); } }
+
+/* swimmers: hidden underwater (only a shadow and bubbles show), then pop up */
+.critter .surf { width: 100%; height: 100%; transform-origin: 50% 100%; transition: transform .22s ease-out, opacity .22s; }
+.critter.under { pointer-events: none; }
+.critter.under .surf { transform: translateY(45%) scaleY(.15); opacity: 0; }
+.critter.under::after { display: none; }
+.shadow {
+  position: absolute; left: 6%; right: 6%; bottom: -4%; height: 16%; border-radius: 50%;
+  background: radial-gradient(rgba(8, 50, 72, .55), transparent 70%);
+  opacity: 0; transition: opacity .22s; pointer-events: none;
+}
+.critter.under .shadow { opacity: 1; }
+.shadow::before, .shadow::after {
+  content: ""; position: absolute; left: 38%; bottom: 70%; width: 9px; height: 9px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.85); animation: bubble 1s linear infinite;
+}
+.shadow::after { left: 60%; width: 6px; height: 6px; animation-delay: .5s; }
+@keyframes bubble { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-34px); opacity: 0; } }
+.splash {
+  position: absolute; width: 96px; height: 26px; border: 3px solid rgba(255,255,255,.9); border-radius: 50%;
+  pointer-events: none; z-index: 2; animation: splash .5s ease-out forwards;
+}
+@keyframes splash { from { transform: translate(-50%, -50%) scale(.3); opacity: 1; } to { transform: translate(-50%, -50%) scale(1.5); opacity: 0; } }
+
+.sushi { position: absolute; left: 0; top: 0; width: 54px; height: 40px; pointer-events: none; z-index: 500; }
+.pop {
+  position: absolute; z-index: 600; pointer-events: none;
+  font-family: var(--display); font-weight: 800; font-size: 2rem; color: #fff;
+  -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill;
+  animation: rise 1s ease-out forwards; white-space: nowrap;
+}
+.pop.big { font-size: 3.2rem; color: var(--gold); }
+.pop.bad { color: #ff6b6b; }
+.pop.combo { font-size: 1.4rem; color: #bff3ff; }
+@keyframes rise { from { transform: translate(-50%, 0) scale(.6); opacity: 1; } 30% { transform: translate(-50%, -20px) scale(1.15); } to { transform: translate(-50%, -80px) scale(1); opacity: 0; } }
+
+.tray {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 400;
+  width: 130px; height: 46px; background: #b5523b; border: 3px solid var(--ink); border-radius: 10px;
+  display: flex; justify-content: center; align-items: center; gap: 4px; pointer-events: none;
+}
+.tray svg { width: 36px; height: 28px; }
+.spark { position: absolute; width: 10px; height: 10px; border-radius: 2px; pointer-events: none; z-index: 550; }
+
+.toast {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 900;
+  background: var(--ink); color: var(--card); font-family: var(--display); font-size: 1.1rem;
+  padding: 8px 16px; border-radius: 14px; white-space: nowrap; max-width: calc(100% - 32px);
+  overflow: hidden; text-overflow: ellipsis; animation: toast 3.2s ease forwards; pointer-events: none;
+}
+@keyframes toast { 0% { opacity: 0; transform: translate(-50%, -10px); } 10%, 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+
+.overlay { position: absolute; inset: 0; z-index: 1000; display: grid; place-items: center; background: rgba(43,33,64,.5); padding: 16px; overflow-y: auto; }
+.panel {
+  background: var(--card); border: 4px solid var(--ink); border-radius: 26px;
+  padding: 20px 18px; max-width: 400px; width: 100%;
+  display: grid; gap: 12px; text-align: center;
+  animation: boing .5s cubic-bezier(.3,1.6,.5,1);
+}
+.panel h2 { font-family: var(--display); font-weight: 800; font-size: 2rem; margin: 0; text-wrap: balance; line-height: 1.1; }
+.panel p { margin: 0; font-size: 1.05rem; font-weight: 800; text-wrap: balance; }
+.panel .big-time { font-family: var(--display); font-size: 3rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.panel .note { font-size: .9rem; color: var(--muted); font-weight: 800; }
+.name-row { display: grid; gap: 6px; text-align: left; }
+.name-row label, .modes legend { font-weight: 800; font-size: .95rem; }
+.name-row input {
+  font: 800 1.4rem var(--display); color: var(--ink); background: #fff;
+  border: 3px solid var(--ink); border-radius: 14px; padding: 8px 12px; width: 100%; min-width: 0; box-sizing: border-box;
+}
+.name-row input:focus-visible { outline: 4px solid #2f80d8; outline-offset: 2px; }
+.modes { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; text-align: left; }
+.modes legend { padding: 0 0 6px; }
+.mode {
+  display: grid; gap: 2px; cursor: pointer; padding: 10px; border: 3px solid var(--ink); border-radius: 14px; background: #fff;
+}
+.mode input { position: absolute; opacity: 0; pointer-events: none; }
+.mode b { font-family: var(--display); font-size: 1.2rem; }
+.mode span { font-size: .78rem; color: var(--muted); font-weight: 800; line-height: 1.25; }
+.mode:has(input:checked) { background: #ffe08a; box-shadow: 0 4px 0 var(--ink); }
+.mode:has(input:focus-visible) { outline: 4px solid #2f80d8; outline-offset: 2px; }
+.btn {
+  font: 800 1.4rem var(--display); color: var(--ink); background: var(--gold);
+  border: 3px solid var(--ink); border-radius: 16px; padding: 10px 26px; cursor: pointer;
+  box-shadow: 0 5px 0 var(--ink);
+}
+.btn:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+.btn:focus-visible, .link:focus-visible { outline: 4px solid #2f80d8; outline-offset: 3px; }
+.link { background: none; border: 0; font: 800 .95rem var(--body); color: var(--muted); text-decoration: underline; cursor: pointer; padding: 4px; }
+@keyframes boing { from { transform: scale(.5); } }
+
+.board { text-align: left; border-top: 3px dashed var(--ink); padding-top: 10px; }
+.board h3 { font-family: var(--display); font-size: 1.15rem; margin: 0 0 6px; text-align: center; }
+.board ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.board li { display: grid; grid-template-columns: 2em minmax(0, 1fr) auto; gap: 8px; align-items: center; font-weight: 800; padding: 4px 8px; border-radius: 10px; background: var(--sky-low); }
+.board li.me { background: #ffe08a; }
+.board .rank { font-family: var(--display); text-align: center; }
+.board li:first-child .rank { background: var(--gold); border: 2px solid var(--ink); border-radius: 50%; }
+.board .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board .tm { font-variant-numeric: tabular-nums; }
+.board li.empty { display: block; color: var(--muted); text-align: center; font-size: .9rem; background: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .critter .walker, .flamingo.rainbow::after, .live { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="rb" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e63946"/><stop offset=".2" stop-color="#f4842b"/>
+      <stop offset=".4" stop-color="#f7c831"/><stop offset=".6" stop-color="#3dbb5c"/>
+      <stop offset=".8" stop-color="#2f80d8"/><stop offset="1" stop-color="#8a4fd6"/>
+    </linearGradient>
+    <linearGradient id="rbv" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e63946"/><stop offset=".2" stop-color="#f4842b"/>
+      <stop offset=".4" stop-color="#f7c831"/><stop offset=".6" stop-color="#3dbb5c"/>
+      <stop offset=".8" stop-color="#2f80d8"/><stop offset="1" stop-color="#8a4fd6"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+  <header class="top">
+    <h1 class="title">Flamingo Sushi</h1>
+    <div class="clock" id="clock" aria-label="Time">0.0s</div>
+    <div class="meter">
+      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="bar"><div class="fill" id="fill"></div></div>
+      <div class="score" id="score" aria-live="polite">0<small>/100</small></div>
+    </div>
+  </header>
+  <div class="legend" aria-label="Points">
+    <span class="dot" style="background:#e63946"></span>
+    <span class="dot" style="background:#f4842b"></span>
+    <span class="dot" style="background:#f7c831"></span>
+    <span class="dot" style="background:#3dbb5c"></span>
+    <span class="dot" style="background:#2f80d8"></span>
+    <span class="dot" style="background:#8a4fd6"></span>
+    <span>= 2</span>
+    <span class="dot rb sep"></span>
+    <span>rainbow = 10</span>
+    <span class="dot gull sep" id="gullDot" hidden></span>
+    <span id="gullTxt" hidden>seagull = &minus;5</span>
+    <span class="mode-tag" id="modeTag">Kid</span>
+  </div>
+  <section class="race" id="race" hidden aria-label="Playing right now">
+    <div class="race-head"><span class="live"></span>Racing right now</div>
+    <div id="lanes"></div>
+  </section>
+  <main class="stage" id="stage" aria-label="Lagoon. Tap a flamingo to feed it sushi.">
+    <div class="tray" aria-hidden="true" id="tray"></div>
+
+    <div class="overlay" id="startOv">
+      <form class="panel" id="startForm" autocomplete="off">
+        <h2>Flamingo Sushi Race</h2>
+        <p>Feed the flamingos and reach 100 points as fast as you can!</p>
+        <div class="name-row">
+          <label for="nameIn">Your name</label>
+          <input id="nameIn" maxlength="16" placeholder="Type your name" required>
+        </div>
+        <fieldset class="modes">
+          <legend>Who's playing?</legend>
+          <label class="mode"><input type="radio" name="mode" value="kid" id="modeKid" checked><b>Kid</b><span>Big flamingos that dash, stop and pop out of the water</span></label>
+          <label class="mode"><input type="radio" name="mode" value="adult" id="modeAdult"><b>Grown-up</b><span>Sneaky dashers, quick divers and sushi-stealing seagulls</span></label>
+        </fieldset>
+        <button class="btn" type="submit">Play!</button>
+        <div class="board">
+          <h3 class="board-title">Fastest kids</h3>
+          <ol class="board-list"></ol>
+        </div>
+      </form>
+    </div>
+
+    <div class="overlay" id="winOv" hidden>
+      <div class="panel">
+        <h2>You did it, <span id="winName"></span>!</h2>
+        <p>100 points in</p>
+        <div class="big-time" id="winTime">0.0s</div>
+        <p class="note" id="winNote"></p>
+        <button class="btn" type="button" id="againBtn">Play again</button>
+        <button class="link" type="button" id="renameBtn">Change player or mode</button>
+        <div class="board">
+          <h3 class="board-title">Fastest kids</h3>
+          <ol class="board-list"></ol>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+  // ---------- tuning ----------
+  const GOAL = 100;
+  const MODES = {
+    // speed: walking pace (px/s). stop: how long a sudden stop lasts. up: how long a swimmer stays above water.
+    // swim: share of flamingos that swim underwater. life: seconds a walker hangs around before wandering off.
+    // runner: share of flamingos that dash straight across without stopping. gullEvery/maxGulls: seagull pressure.
+    kid:   { label: "Kid",      boardTitle: "Fastest kids",      speed: [85, 115],  stop: [0.7, 1.5], up: [1.6, 2.4], swim: 0.3,  runner: 0.25, life: [6, 9], surfaces: [3, 4], zig: 0.06, zigPeriod: [1.4, 2.0], gulls: false, gullEvery: [0, 0],       maxGulls: 0, max: [3, 5] },
+    adult: { label: "Grown-up", boardTitle: "Fastest grown-ups", speed: [140, 190], stop: [0.25, 0.8], up: [0.8, 1.3], swim: 0.35, runner: 0.25, life: [5, 8], surfaces: [2, 4], zig: 0.11, zigPeriod: [0.7, 1.1], gulls: true,  gullEvery: [1300, 2600], maxGulls: 3, max: [4, 6] },
+  };
+  const COLORS = [
+    { name: "red",    fill: "#e63946", dark: "#9e1f2b", wing: "#f27a83", w: 15, pts: 2 },
+    { name: "orange", fill: "#f4842b", dark: "#a85212", wing: "#f9b376", w: 15, pts: 2 },
+    { name: "yellow", fill: "#f7c831", dark: "#a8820c", wing: "#fbe183", w: 15, pts: 2 },
+    { name: "green",  fill: "#3dbb5c", dark: "#1f7a37", wing: "#86dc9a", w: 15, pts: 2 },
+    { name: "blue",   fill: "#2f80d8", dark: "#164f8f", wing: "#7fb3ec", w: 15, pts: 2 },
+    { name: "purple", fill: "#8a4fd6", dark: "#55278f", wing: "#b994ea", w: 15, pts: 2 },
+    { name: "rainbow", fill: "url(#rb)", dark: "#55278f", wing: "url(#rbv)", w: 9, pts: 10, rainbow: true },
+  ];
+  const RUNNER_COLORS = ["#e63946", "#f4842b", "#f7c831", "#3dbb5c", "#2f80d8", "#8a4fd6"];
+
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), scoreEl = $("score"), fillEl = $("fill"), barEl = $("bar"), clockEl = $("clock");
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const fmt = (ms) => (ms / 1000).toFixed(1) + "s";
+  const keyOf = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24) || "player";
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  };
+
+  const SUSHI = `<svg viewBox="0 0 54 40" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="27" cy="26" rx="24" ry="11" fill="#fffdf6" stroke="#2b2140" stroke-width="2.5"/>
+    <path d="M5 22 C10 8, 44 6, 49 20 C44 16, 12 16, 5 22 Z" fill="#ff8a5c" stroke="#2b2140" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M14 13 L18 20 M25 10 L28 18 M36 11 L38 18" stroke="#ffd0b8" stroke-width="2" stroke-linecap="round"/>
+    <rect x="22" y="12" width="10" height="25" rx="2" fill="#1e3b2c" stroke="#2b2140" stroke-width="2"/>
+  </svg>`;
+  const GULL = `<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+    <path d="M10 30 C30 5, 50 10, 60 34 C70 10, 92 5, 112 28 C92 22, 74 28, 64 44 L56 44 C46 28, 28 22, 10 30 Z" fill="#f4f6f8" stroke="#2b2140" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M10 30 C16 24, 22 22, 28 22 M112 28 C106 22, 100 21, 94 21" stroke="#5b6170" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <ellipse cx="60" cy="48" rx="20" ry="12" fill="#fff" stroke="#2b2140" stroke-width="3"/>
+    <circle cx="76" cy="42" r="9" fill="#fff" stroke="#2b2140" stroke-width="3"/>
+    <path d="M84 41 L98 45 L84 48 Z" fill="#f7c831" stroke="#2b2140" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="78" cy="40" r="2" fill="#2b2140"/>
+    <path d="M73 35 L81 37" stroke="#2b2140" stroke-width="2.5" stroke-linecap="round"/>
+  </svg>`;
+  for (let i = 0; i < 3; i++) $("tray").insertAdjacentHTML("beforeend", SUSHI);
+
+  for (let i = 0; i < 7; i++) {
+    const r = document.createElement("div");
+    r.className = "ripple";
+    r.style.left = (Math.random() * 85) + "%";
+    r.style.top = (45 + Math.random() * 45) + "%";
+    r.style.width = (30 + Math.random() * 70) + "px";
+    stage.appendChild(r);
+  }
+
+  function flamingoSVG(c) {
+    return `<svg viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg">
+      <path d="M46 84 L44 136" stroke="${c.dark}" stroke-width="4" stroke-linecap="round"/>
+      <path d="M56 84 L60 108 L48 116" stroke="${c.dark}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M38 136 L50 136" stroke="${c.dark}" stroke-width="4" stroke-linecap="round"/>
+      <path d="M72 66 C92 52, 58 40, 70 22" stroke="${c.fill}" stroke-width="10" stroke-linecap="round" fill="none"/>
+      <path d="M18 66 C14 56, 26 50, 34 56 L20 74 Z" fill="${c.fill}" stroke="#2b2140" stroke-width="2.5" stroke-linejoin="round"/>
+      <ellipse cx="50" cy="70" rx="30" ry="18" fill="${c.fill}" stroke="#2b2140" stroke-width="2.5"/>
+      <path d="M32 66 C42 56, 60 58, 66 68 C56 78, 40 78, 32 66 Z" fill="${c.wing}" stroke="#2b2140" stroke-width="2" opacity=".85"/>
+      <circle cx="72" cy="18" r="10" fill="${c.fill}" stroke="#2b2140" stroke-width="2.5"/>
+      <path d="M80 13 L97 20 L92 27 L81 22 Z" fill="#fff3d6" stroke="#2b2140" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M92 18 L97 20 L92 27 Z" fill="#2b2140"/>
+      <circle cx="74" cy="15" r="3" fill="#fff"/><circle cx="74.8" cy="15.2" r="1.6" fill="#2b2140"/>
+      ${c.rainbow ? `<path d="M64 6 l2 -6 l2 6 l6 2 l-6 2 l-2 6 l-2 -6 l-6 -2 Z" fill="#fff" stroke="#ffb72b" stroke-width="1"/>` : ""}
+    </svg>`;
+  }
+
+  // ---------- game state ----------
+  let state = "ready";            // ready | playing | won
+  let mode = store.get("flamingo-mode") === "adult" ? "adult" : "kid";
+  let score = 0, startT = 0, finishMs = 0;
+  let playerName = store.get("flamingo-name") || "";
+  let critters = [], audio = null, lastT = 0, nextGull = 0;
+  let combo = 0, lastFeed = 0;
+
+  $("nameIn").value = playerName;
+  (mode === "adult" ? $("modeAdult") : $("modeKid")).checked = true;
+
+  function applyMode() {
+    const m = MODES[mode];
+    $("app").classList.toggle("adult-mode", mode === "adult");
+    $("modeTag").textContent = m.label;
+    $("gullDot").hidden = $("gullTxt").hidden = !m.gulls;
+    document.querySelectorAll(".board-title").forEach(h => h.textContent = m.boardTitle);
+    renderBoard();
+  }
+  document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => {
+    mode = r.value === "adult" ? "adult" : "kid"; applyMode();
+  }));
+
+  function pickColor() {
+    const total = COLORS.reduce((s, c) => s + c.w, 0);
+    let r = Math.random() * total;
+    for (const c of COLORS) { if ((r -= c.w) < 0) return c; }
+    return COLORS[0];
+  }
+
+  // Movement. Three kinds of critter:
+  //  walker  - wades on the surface in random bursts: dash, sudden stop, stroll, turn around.
+  //  swimmer - darts around underwater (only a shadow and bubbles show), pops up for a moment, dives again.
+  //  gull    - zig-zags through the air (grown-up mode only).
+  const tri = (p) => 4 * Math.abs(p - Math.floor(p + 0.5)) - 1;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  function spawn(kind) {
+    const m = MODES[mode];
+    const isGull = kind === "gull";
+    const c = isGull ? null : pickColor();
+    const roll = Math.random();
+    const swims = !isGull && roll < m.swim;
+    const runs = !isGull && !swims && roll < m.swim + m.runner;   // straight-line speedsters
+    const el = document.createElement("div");
+    el.className = "critter " + (isGull ? "gull" : "flamingo" + (c.rainbow ? " rainbow" : "")) + (swims ? " under" : "");
+    el.innerHTML = `<div class="surf"><div class="walker">${isGull ? GULL : flamingoSVG(c)}</div></div>` + (swims ? `<div class="shadow"></div>` : "");
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", isGull ? "seagull" : c.name + " flamingo");
+    stage.appendChild(el);
+    const W = stage.clientWidth, H = stage.clientHeight, w = el.offsetWidth, h = el.offsetHeight;
+    const dir = Math.random() < .5 ? 1 : -1;
+    let speed = rand(m.speed[0], m.speed[1]);
+    if (c && c.rainbow) speed *= 1.3;
+    if (isGull) speed *= 1.25;
+    const f = {
+      el, c, isGull, kind: isGull ? "gull" : swims ? "swimmer" : runs ? "runner" : "walker",
+      dir, heading: dir, w, h, speed, fed: false,
+      x: dir === 1 ? -w : W,
+      footY: rand(0.62, 0.9) * H,
+      vx: 0, vy: 0, tvx: dir * speed, tvy: 0, segT: 0,
+      entered: false, leaving: false, exitDir: null, life: rand(m.life[0], m.life[1]),
+    };
+    if (isGull) {
+      Object.assign(f, { base: rand(0.42, 0.6) * H, amp: m.zig * H * 0.5, phase: Math.random(), period: rand(m.zigPeriod[0], m.zigPeriod[1]) });
+      // Seagulls pick a flamingo to bother: either tail it closely for a moment, or swoop right past its head.
+      const prey = critters.filter(o => !o.isGull && !o.fed && !o.leaving && o.phaseName !== "under");
+      if (prey.length) {
+        f.target = prey[Math.floor(Math.random() * prey.length)];
+        f.shadowT = Math.random() < 0.6 ? rand(1.2, 2.4) : 0;
+        f.offX = rand(-0.45, 0.45) * f.target.w;
+        f.offY = rand(-0.15, 0.25) * f.target.h;
+        const fromLeft = f.target.x + f.target.w / 2 < W / 2;     // enter from the side nearest the target
+        f.x = fromLeft ? -w : W;
+        f.dir = fromLeft ? 1 : -1;
+        f.footY = f.target.footY - f.target.h * 0.6 + f.offY;
+      }
+    }
+    if (runs) {
+      f.speed *= mode === "adult" ? 2.3 : 1.9;
+      f.tvx = f.vx = dir * f.speed;
+    }
+    if (swims) {
+      // Swimmers start somewhere inside the lagoon, already underwater.
+      f.x = rand(0, Math.max(0, W - w));
+      f.footY = rand(0.6, 0.92) * H;
+      f.phaseName = "under";
+      f.surfaces = Math.round(rand(m.surfaces[0], m.surfaces[1]));
+      f.swimLeft = Math.round(rand(1, 3));
+    }
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); isGull ? hitGull(f) : feed(f); });
+    critters.push(f);
+    draw(f, 0);
+  }
+
+  function walkerStep(f, m, W) {
+    if (f.fed || f.life <= 0) {
+      if (f.exitDir === null) f.exitDir = (f.x + f.w / 2 < W / 2) ? -1 : 1;
+      f.leaving = true;
+      f.tvx = f.exitDir * f.speed * 2.2; f.tvy = 0;
+      return;
+    }
+    if (!f.entered) {
+      if (f.x > 0 && f.x < W - f.w) f.entered = true;
+      else { f.tvx = f.heading * f.speed * 1.4; f.tvy = 0; return; }
+    }
+    // Stay on screen until it's time to go: bounce off the sides.
+    if (f.x < 0) { f.x = 0; f.heading = 1; f.tvx = Math.abs(f.tvx); }
+    if (f.x > W - f.w) { f.x = W - f.w; f.heading = -1; f.tvx = -Math.abs(f.tvx); }
+    if (f.segT > 0) return;
+    if (Math.random() < 0.3) f.heading = -f.heading;          // surprise turn
+    const d = f.heading, r = Math.random();
+    if (r < 0.42) {                                            // dash
+      f.tvx = d * f.speed * rand(1.4, 2.2); f.tvy = rand(-0.7, 0.7) * f.speed; f.segT = rand(0.25, 0.7);
+    } else if (r < 0.75) {                                     // freeze on the spot
+      f.tvx = f.tvy = f.vx = f.vy = 0; f.segT = rand(m.stop[0], m.stop[1]);
+    } else {                                                   // stroll
+      f.tvx = d * f.speed * 0.6; f.tvy = rand(-0.4, 0.4) * f.speed; f.segT = rand(0.4, 1.0);
+    }
+  }
+
+  function swimmerStep(f, m, W) {
+    if (f.phaseName === "up") {
+      f.tvx = f.tvy = 0; f.vx *= 0.8; f.vy *= 0.8;
+      if (f.segT <= 0) dive(f);
+      return;
+    }
+    if (f.x < 0) { f.x = 0; f.tvx = Math.abs(f.tvx); }
+    if (f.x > W - f.w) { f.x = W - f.w; f.tvx = -Math.abs(f.tvx); }
+    if (f.segT > 0) return;
+    if (f.surfaces <= 0) { f.done = true; return; }
+    if (f.swimLeft <= 0) { surface(f, m); return; }
+    f.tvx = rand(-1, 1) * f.speed * 1.8; f.tvy = rand(-1, 1) * f.speed * 0.7;
+    f.segT = rand(0.3, 0.7); f.swimLeft--;
+  }
+
+  function surface(f, m) {
+    f.phaseName = "up";
+    f.el.classList.remove("under");
+    f.vx = f.vy = f.tvx = f.tvy = 0;
+    f.segT = rand(m.up[0], m.up[1]);
+    splash(f);
+  }
+
+  function dive(f) {
+    f.phaseName = "under";
+    f.el.classList.add("under");
+    f.surfaces--;
+    f.swimLeft = Math.round(rand(1, 3));
+    f.segT = 0;
+    splash(f);
+  }
+
+  function splash(f) {
+    const s = document.createElement("div");
+    s.className = "splash";
+    s.style.left = (f.x + f.w / 2) + "px";
+    s.style.top = f.footY + "px";
+    stage.appendChild(s);
+    setTimeout(() => s.remove(), 520);
+  }
+
+  function update(f, dt, m, W, H) {
+    if (f.isGull) {
+      const tg = f.target;
+      const tgOk = tg && !f.fed && !tg.fed && tg.phaseName !== "under" && critters.includes(tg);
+      f.phase += dt / f.period;
+      const wobble = f.amp * tri(f.phase);
+      if (tgOk && f.shadowT > 0) {
+        // Tailing: hover just over the flamingo, matching its moves.
+        f.shadowT -= dt;
+        const goalX = tg.x + tg.w / 2 + f.offX - f.w / 2;
+        const goalY = tg.footY - tg.h * 0.6 + f.offY + wobble * 0.3;
+        const k = Math.min(1, dt * 5);
+        if (Math.abs(goalX - f.x) > 4) f.dir = goalX > f.x ? 1 : -1;
+        f.x += (goalX - f.x) * k;
+        f.footY += (goalY - f.footY) * k;
+      } else {
+        // Swooping (or done tailing): fly straight on, skimming the target's head height if it has one.
+        f.x += f.dir * f.speed * dt * (f.fed ? 2.5 : 1);
+        const goalY = tgOk ? tg.footY - tg.h * 0.6 + f.offY : f.base;
+        f.footY += (goalY + wobble - f.footY) * Math.min(1, dt * 3);
+      }
+      f.footY = clamp(f.footY, H * 0.25, H * 0.95);
+      draw(f, 0);
+      return;
+    }
+    f.segT -= dt;
+    f.life -= dt;
+    if (f.kind === "swimmer") swimmerStep(f, m, W);
+    else if (f.kind === "runner") {
+      // Runners never stop: one fast, straight dash across the lagoon.
+      if (f.x > 0 && f.x < W - f.w) f.entered = true;
+      f.leaving = f.entered;
+      f.tvx = f.dir * f.speed * (f.fed ? 1.3 : 1); f.tvy = 0;
+    }
+    else walkerStep(f, m, W);
+    // Snappy acceleration so dashes and stops feel sudden.
+    const k = Math.min(1, dt * (f.kind === "swimmer" ? 7 : 14));
+    f.vx += (f.tvx - f.vx) * k;
+    f.vy += (f.tvy - f.vy) * k;
+    f.x += f.vx * dt;
+    f.footY += f.vy * dt;
+    const top = H * 0.52, bottom = H * 0.96;
+    if (f.footY < top) { f.footY = top; f.tvy = Math.abs(f.tvy); }
+    if (f.footY > bottom) { f.footY = bottom; f.tvy = -Math.abs(f.tvy); }
+    if (f.vx > 8) f.dir = 1; else if (f.vx < -8) f.dir = -1;
+    draw(f, f.vy);
+  }
+
+  function draw(f, vy) {
+    const tilt = f.kind === "walker" ? clamp(vy / f.speed * 12, -9, 9) : 0;
+    f.el.style.transform = `translate(${f.x}px, ${f.footY - f.h}px) scaleX(${f.dir}) rotate(${tilt * f.dir}deg)`;
+    f.el.style.zIndex = f.isGull ? 450 : f.phaseName === "under" ? 1 : Math.round(f.footY);
+  }
+
+  function tick(t) {
+    const dt = Math.min(.05, (t - (lastT || t)) / 1000); lastT = t;
+    const W = stage.clientWidth, H = stage.clientHeight;
+    const m = MODES[mode];
+    for (const f of critters) update(f, dt, m, W, H);
+    critters = critters.filter(f => {
+      const off = f.x > W + 20 || f.x < -f.w - 20;
+      const gone = f.done || (f.isGull ? (f.x > W + f.w + 20 || f.x < -f.w * 2 - 20) : (f.leaving && off));
+      if (gone) {
+        if (f.done) { f.el.style.transition = "opacity .3s"; f.el.style.opacity = 0; setTimeout(() => f.el.remove(), 320); }
+        else f.el.remove();
+      }
+      return !gone;
+    });
+    const want = Math.max(m.max[0], Math.min(m.max[1], Math.floor(W / 160)));
+    const hungry = critters.filter(f => !f.isGull && !f.fed && !f.leaving).length;
+    if (state !== "won" && hungry < want && Math.random() < dt * 2.2) spawn("flamingo");
+    if (state === "playing" && m.gulls && t > nextGull) {
+      if (critters.filter(f => f.isGull && !f.fed).length < m.maxGulls) spawn("gull");
+      nextGull = t + rand(m.gullEvery[0], m.gullEvery[1]);
+    }
+    if (state === "playing") clockEl.textContent = fmt(performance.now() - startT);
+    requestAnimationFrame(tick);
+  }
+
+  function sound(kind) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const notes = kind === "rainbow" ? [523, 659, 784, 1047, 1319] : kind === "bad" ? [300, 200] : [660, 880];
+      notes.forEach((hz, i) => {
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.type = kind === "bad" ? "sawtooth" : "triangle"; o.frequency.value = hz;
+        const st = audio.currentTime + i * 0.08;
+        g.gain.setValueAtTime(0.0001, st);
+        g.gain.exponentialRampToValueAtTime(kind === "bad" ? 0.08 : 0.18, st + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, st + 0.22);
+        o.connect(g).connect(audio.destination); o.start(st); o.stop(st + 0.25);
+      });
+    } catch (e) {}
+  }
+
+  function centerOf(f) {
+    const sr = stage.getBoundingClientRect(), fr = f.el.getBoundingClientRect();
+    return { x: fr.left - sr.left + fr.width / 2, y: fr.top - sr.top + fr.height * .15, sr, fr };
+  }
+
+  function feed(f) {
+    if (f.fed || state !== "playing") return;
+    f.fed = true;
+    const { sr, fr } = centerOf(f);
+    const tx = fr.left - sr.left + fr.width * (f.dir === 1 ? .75 : .25) - 27;
+    const ty = fr.top - sr.top + fr.height * .08;
+    const sx = sr.width / 2 - 27, sy = sr.height - 60;
+    const s = document.createElement("div");
+    s.className = "sushi"; s.innerHTML = SUSHI;
+    s.style.transform = `translate(${sx}px, ${sy}px)`;
+    stage.appendChild(s);
+    const mx = (sx + tx) / 2, my = Math.min(sy, ty) - 80;
+    s.animate([
+      { transform: `translate(${sx}px, ${sy}px) rotate(0)` },
+      { transform: `translate(${mx}px, ${my}px) rotate(200deg)` },
+      { transform: `translate(${tx}px, ${ty}px) rotate(360deg) scale(.5)` },
+    ], { duration: 320, easing: "ease-in-out" }).onfinish = () => {
+      s.remove();
+      if (state !== "playing") return;
+      const pts = f.c.pts;
+      setScore(score + pts);
+      sound(f.c.rainbow ? "rainbow" : "ok");
+      f.el.classList.add("fed");
+      if (f.kind === "swimmer") {
+        // A happy hop above the water, then one last dive.
+        if (f.phaseName === "up") f.segT = 0.9;
+        f.surfaces = 1;
+      }
+      popText(tx + 27, ty - 10, "+" + pts, f.c.rainbow ? "big" : "");
+      if (f.c.rainbow) sparkles(tx + 27, ty + 20, 22);
+      const now = performance.now();
+      combo = now - lastFeed < 1100 ? combo + 1 : 1;
+      lastFeed = now;
+      if (combo >= 3) popText(tx + 27, ty + 30, `Combo x${combo}!`, "combo");
+      if (score >= GOAL) win();
+    };
+  }
+
+  function hitGull(f) {
+    if (f.fed || state !== "playing") return;
+    f.fed = true;
+    f.el.classList.add("caught");
+    const { x, y } = centerOf(f);
+    setScore(Math.max(0, score - 5));
+    combo = 0;
+    sound("bad");
+    popText(x, y, "−5 Seagull!", "bad");
+    scoreEl.classList.remove("hurt"); void scoreEl.offsetWidth; scoreEl.classList.add("hurt");
+  }
+
+  function popText(x, y, txt, cls) {
+    const p = document.createElement("div");
+    p.className = "pop " + (cls || "");
+    p.textContent = txt;
+    p.style.left = x + "px"; p.style.top = y + "px";
+    stage.appendChild(p);
+    setTimeout(() => p.remove(), 1000);
+  }
+
+  function sparkles(x, y, n) {
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement("div");
+      d.className = "spark";
+      d.style.background = RUNNER_COLORS[i % RUNNER_COLORS.length];
+      d.style.left = x + "px"; d.style.top = y + "px";
+      stage.appendChild(d);
+      const a = Math.random() * Math.PI * 2, r = 50 + Math.random() * 110;
+      d.animate([
+        { transform: "translate(0,0) rotate(0)", opacity: 1 },
+        { transform: `translate(${Math.cos(a) * r}px, ${Math.sin(a) * r + 60}px) rotate(${Math.random() * 720}deg)`, opacity: 0 },
+      ], { duration: 900 + Math.random() * 500, easing: "cubic-bezier(.2,.7,.4,1)" }).onfinish = () => d.remove();
+    }
+  }
+
+  function toast(text) {
+    const t = document.createElement("div");
+    t.className = "toast"; t.textContent = text;
+    stage.appendChild(t);
+    setTimeout(() => t.remove(), 3300);
+  }
+
+  function setScore(n) {
+    score = Math.min(GOAL, n);
+    scoreEl.innerHTML = score + "<small>/100</small>";
+    fillEl.style.width = score + "%";
+    barEl.setAttribute("aria-valuenow", score);
+    sharePresence();
+  }
+
+  function startGame() {
+    critters.forEach(f => f.el.remove()); critters = [];
+    for (let i = 0; i < 3; i++) setTimeout(() => spawn("flamingo"), i * 200);
+    state = "playing";
+    startT = performance.now();
+    nextGull = performance.now() + 2500;
+    finishMs = 0; combo = 0;
+    setScore(0);
+    $("startOv").hidden = true;
+    $("winOv").hidden = true;
+  }
+
+  async function win() {
+    state = "won";
+    finishMs = Math.round(performance.now() - startT);
+    clockEl.textContent = fmt(finishMs);
+    sharePresence();
+    $("winName").textContent = playerName;
+    $("winTime").textContent = fmt(finishMs);
+    $("winNote").textContent = "Saving your time...";
+    setTimeout(() => {
+      $("winOv").hidden = false;
+      $("againBtn").focus();
+      sound("rainbow"); setTimeout(() => sound("rainbow"), 450);
+      const W = stage.clientWidth;
+      for (let k = 0; k < 5; k++) setTimeout(() => sparkles(Math.random() * W, 60 + Math.random() * 120, 26), k * 300);
+    }, 500);
+    const ms = finishMs, m = mode;
+    const result = await backend.save(playerName, ms, m);
+    const rows = (boards && boards[m]) || [];
+    const rank = rows.filter(r => r.ms < ms).length + 1;
+    const notes = {
+      best: rank === 1 ? "New record! You're number 1!" : `New personal best! You're number ${rank}.`,
+      kept: "Nice! Your best time is still faster.",
+      fail: "Your time couldn't be saved this time.",
+      nosave: "The leaderboard isn't available here, so this time wasn't saved.",
+    };
+    $("winNote").textContent = notes[result] || "";
+  }
+
+  $("startForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const n = $("nameIn").value.replace(/\s+/g, " ").trim().slice(0, 16);
+    if (!n) { $("nameIn").focus(); return; }
+    playerName = n;
+    store.set("flamingo-name", n);
+    store.set("flamingo-mode", mode);
+    sound("ok");
+    startGame();
+  });
+  $("againBtn").addEventListener("click", startGame);
+  $("renameBtn").addEventListener("click", () => {
+    state = "ready"; setScore(0); clockEl.textContent = "0.0s";
+    critters.filter(f => f.isGull).forEach(f => { f.fed = true; f.speed *= 3; });
+    $("winOv").hidden = true; $("startOv").hidden = false;
+    $("nameIn").focus();
+  });
+
+  // ---------- leaderboard ----------
+  let boards = null, boardState = "loading";
+
+  function renderBoard() {
+    document.querySelectorAll(".board-list").forEach(ol => {
+      ol.textContent = "";
+      const rows = boards ? (boards[mode] || []) : [];
+      if (boardState !== "on" || !rows.length) {
+        const li = document.createElement("li");
+        li.className = "empty";
+        li.textContent = boardState === "loading" ? "Loading the fastest times..."
+          : boardState === "off" ? "The leaderboard isn't available here."
+          : "No times yet. Be the first!";
+        ol.appendChild(li);
+        return;
+      }
+      rows.slice(0, 8).forEach((r, i) => {
+        const li = document.createElement("li");
+        if (playerName && keyOf(r.name) === keyOf(playerName)) li.className = "me";
+        const rk = document.createElement("span"); rk.className = "rank"; rk.textContent = i + 1;
+        const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = r.name;
+        const tm = document.createElement("span"); tm.className = "tm"; tm.textContent = fmt(r.ms);
+        li.append(rk, nm, tm);
+        ol.appendChild(li);
+      });
+    });
+  }
+
+  function onBoards(b) {
+    if (!b) { if (boardState !== "on") { boardState = "off"; renderBoard(); } return; }
+    const clean = (rows) => (Array.isArray(rows) ? rows : [])
+      .filter(r => r && typeof r.name === "string" && typeof r.ms === "number" && r.ms > 0)
+      .map(r => ({ name: r.name.slice(0, 16), ms: r.ms }))
+      .sort((a, b) => a.ms - b.ms);
+    boards = { kid: clean(b.kid), adult: clean(b.adult) };
+    boardState = "on";
+    renderBoard();
+  }
+
+  // ---------- live race ----------
+  const lastSeen = new Map();
+  let othersRacing = false;
+
+  function sharePresence() {
+    backend.presence({ name: playerName || null, score, state, ms: finishMs || null, mode });
+  }
+
+  function colorFor(s) {
+    let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return RUNNER_COLORS[h % RUNNER_COLORS.length];
+  }
+
+  function onRacers(list) {
+    const racers = list.filter(r => r && typeof r.name === "string" && r.name);
+    const others = racers.filter(r => !r.me);
+    othersRacing = others.some(r => r.state === "playing");
+    for (const r of others) {
+      const prev = lastSeen.get(r.id);
+      if (r.state === "won" && prev && prev !== "won" && typeof r.ms === "number") {
+        toast(`${r.name.slice(0, 16)} reached 100 in ${fmt(r.ms)}!`);
+      }
+      lastSeen.set(r.id, r.state);
+    }
+    const race = $("race"), lanes = $("lanes");
+    if (!others.length) { race.hidden = true; return; }
+    race.hidden = false;
+    lanes.textContent = "";
+    racers.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0)).slice(0, 6).forEach(r => {
+      const sc = Math.max(0, Math.min(100, Number(r.score) || 0));
+      const row = document.createElement("div");
+      row.className = "lane" + (r.state === "ready" ? " idle" : "");
+      const who = document.createElement("div"); who.className = "who";
+      who.textContent = r.name.slice(0, 16);
+      const tag = document.createElement("span"); tag.className = "tag" + (r.me ? " you" : "");
+      tag.textContent = r.me ? "you" : (r.mode === "adult" ? "grown-up" : "kid");
+      who.appendChild(tag);
+      const track = document.createElement("div"); track.className = "track";
+      const run = document.createElement("div"); run.className = "runner";
+      run.style.left = Math.max(4, sc) + "%";
+      run.style.background = colorFor(r.id);
+      const fin = document.createElement("div"); fin.className = "finish";
+      track.append(run, fin);
+      const pts = document.createElement("div"); pts.className = "pts";
+      pts.textContent = r.state === "won" && typeof r.ms === "number" ? fmt(r.ms) : r.state === "ready" ? "getting ready" : sc;
+      row.append(who, track, pts);
+      lanes.appendChild(row);
+    });
+  }
+
+  function cleanRacer(id, me, p) {
+    p = p || {};
+    return {
+      id: String(id), me: !!me,
+      name: typeof p.name === "string" ? p.name.slice(0, 16) : "",
+      score: Number(p.score) || 0,
+      state: ["ready", "playing", "won"].includes(p.state) ? p.state : "ready",
+      ms: typeof p.ms === "number" ? p.ms : null,
+      mode: p.mode === "adult" ? "adult" : "kid",
+    };
+  }
+
+  // ---------- backends ----------
+  // Inside Claude: shared database + live room. On your own website: small Netlify functions.
+  function claudeBackend() {
+    let db = null, uid = null, room = null, myRuns = {};
+    const use = (n) => window.claude.use(n).catch(() => null);
+    return {
+      async init() {
+        const user = await use("user");
+        try { uid = user ? await user.id() : null; } catch (e) { uid = null; }
+        db = await use("db");
+        if (db) {
+          try {
+            db.collection("boards").onSnapshot((snap) => {
+              const b = { kid: [], adult: [] };
+              snap.docs.forEach((d) => {
+                const runs = (d.data() || {}).runs || {};
+                if (d.id === uid) myRuns = { ...runs };
+                for (const k in runs) { const v = runs[k]; if (v) b[v.mode === "adult" ? "adult" : "kid"].push(v); }
+              });
+              onBoards(b);
+            }, () => onBoards(null));
+          } catch (e) { onBoards(null); }
+        } else onBoards(null);
+        room = await use("room");
+        if (room) {
+          room.onPeers((ch) => onRacers(ch.peers.filter(p => p.kind === "viewer").map(p => cleanRacer(p.peer, p.sameTab, p.presence))), () => onRacers([]));
+          sharePresence();
+        }
+      },
+      async save(name, ms, m) {
+        if (!db || !uid) return "nosave";
+        const key = m + "-" + keyOf(name);
+        const prev = myRuns[key];
+        if (prev && typeof prev.ms === "number" && prev.ms <= ms) return "kept";
+        const runs = { ...myRuns, [key]: { name, ms, mode: m, at: Date.now() } };
+        try { await db.doc("boards/" + uid).set({ runs }); myRuns = runs; return "best"; }
+        catch (e) { return "fail"; }
+      },
+      presence(p) { if (room) room.presence(p).catch(() => {}); },
+    };
+  }
+
+  function httpBackend() {
+    let device = store.get("flamingo-device");
+    if (!device || device.length < 12) {
+      device = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("");
+      store.set("flamingo-device", device);
+    }
+    const tabId = device.slice(0, 16) + Math.random().toString(36).slice(2, 8);
+    let last = {}, online = false, timer = null;
+    const post = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+    async function loadBoards() {
+      try {
+        const r = await fetch("/api/scores", { cache: "no-store" });
+        if (!r.ok) throw new Error(r.status);
+        onBoards(await r.json());
+        online = true;
+      } catch (e) { onBoards(null); }
+    }
+    async function pulse() {
+      clearTimeout(timer);
+      if (!online) return;
+      if (!document.hidden) {
+        try {
+          const r = await post("/api/race", { id: tabId, ...last });
+          if (r.ok) {
+            const d = await r.json();
+            onRacers((d.racers || []).map(x => cleanRacer(x.id, x.id === tabId, x)));
+          }
+        } catch (e) {}
+      }
+      // Check often while someone is playing, slowly while waiting on the menu.
+      timer = setTimeout(pulse, (state === "playing" || othersRacing) ? 2500 : 10000);
+    }
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) pulse(); });
+    window.addEventListener("pagehide", () => {
+      try { navigator.sendBeacon("/api/race", JSON.stringify({ id: tabId, leave: true })); } catch (e) {}
+    });
+    return {
+      async init() {
+        await loadBoards();
+        if (online) { setInterval(loadBoards, 30000); pulse(); }
+      },
+      async save(name, ms, m) {
+        if (!online) return "nosave";
+        try {
+          const r = await post("/api/scores", { device, name, ms, mode: m });
+          if (!r.ok) return "fail";
+          const d = await r.json();
+          if (d.boards) onBoards(d.boards);
+          return d.result === "best" ? "best" : "kept";
+        } catch (e) { return "fail"; }
+      },
+      presence(p) {
+        const changedState = p.state !== last.state;
+        last = p;
+        if (changedState) pulse();
+      },
+    };
+  }
+
+  const backend = (window.claude && typeof window.claude.use === "function") ? claudeBackend() : httpBackend();
+  applyMode();
+  backend.init();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
